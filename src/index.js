@@ -1,118 +1,85 @@
 import "./style/main.css";
-import { logo } from "./resource";
-import * as utils from "./utils/index";
+import logo from "./assets/logo.svg";
+// import * as utils from "./utils/index";
 import windowBridge from "./utils/windowBridge";
 export default class Chat {
   constructor({
     draggable = true,
     position = "fixed",
-    top = 0,
-    right = 0,
-    boxTop = 0,
-    boxRight = 0,
-    beforeOpen = () => {},
+    bottom = 30,
+    right = 10
   } = {}) {
+    // public variable
     this.draggable = draggable;
     this.position = position;
-    this.top = top;
+    this.bottom = bottom;
     this.right = right;
-    this.boxTop = boxTop;
-    this.boxRight = boxRight;
     this.src = "http://helpcenter.jd.com";
-    // event
-    this.beforeOpen = beforeOpen;
     // private variable
     this._appOpen = false; // 聊天窗口是否打开
-    this._isHoverScale = true; // 是否是hover缩放的
-    this._toolOpen = false; // 小工具是否打开
-    this._reminderOpen = false; // 异常提醒是否打开
     this._socketLink = 0; // socket 连接情况，初始未连接
-    this._questionDom = null; // 常见问题组件
     this.render();
   }
   render() {
-    // 创建refs用来储存dom对象
+    // 开始监听
+    windowBridge.startListener()
+    // 监听窗口关闭事件
+    windowBridge.on('close', () => {
+      this.close()
+    })
+    // 监听 socket 连接情况
+    windowBridge.on('linkStatusChange', data => {
+      this._socketLink = data
+    })
+
     this.$refs = Object.create(null);
     const renderInner = () => {
       this.$el = document.createElement("div");
       this.$el.className = "chat";
       this.$el.style.position = this.position;
       this.$el.style.right = this.right + "px";
-      this.$el.style.top = this.top + "px";
-      let iframeWidth = "924px";
-      let iframeHeight = "90vh";
-      const Questions = `
-        <div class="chat-tool__text">
-          <span class="text">联系客服在线咨询</span>
-        </div>
-      `;
+      this.$el.style.bottom = this.bottom + "px";
+      let iframeWidth = "300px";
+      let iframeHeight = "500px";
       this.$el.innerHTML = `
-        <div class="chat-tool">
-          <img class="chat-tool__logo" src="${logo}" />
-          ${Questions}
+        <div class="chat-bar">
+          <img class="chat-bar__logo" src="${logo}" />
+          <span class="chat-bar__text">在线聊天</span>
         </div>
-      <div class="chat-content" style="width: ${iframeWidth}; height: ${iframeHeight}; top: ${this.boxTop}px; right: ${this.boxRight}px;">
-        <div class="chat-content__header">
-          <img class="chat-content__logo" src="${logo}" />
-        </div>
-        <div class="jimi-content__border"></div>
+      <div class="chat-content" style="width: ${iframeWidth}; height: ${iframeHeight};">
       </div>
       `;
-      this.$refs.logo = this.$el.querySelector(".chat-tool__logo");
-      this.$refs.tool = this.$el.querySelector(".chat-tool");
-      this.$refs.frameHeader = this.$el.querySelector(".chat-content__header");
+      this.$refs.bar = this.$el.querySelector(".chat-bar");
       this.$refs.content = this.$el.querySelector(".chat-content");
       document.body.appendChild(this.$el);
+      // 开始监听唤起条的一些事件
       this._initEvent();
     };
     renderInner();
   }
   _initEvent() {
     // chat图标和聊天窗口可以拖动
-    this.draggable &&
-      utils.draggable(this.$el, this.$refs.logo) &&
-      utils.draggable(this.$el, this.$refs.frameHeader);
+    // this.draggable && utils.draggable(this.$el, this.$refs.frameHeader);
     // 点击图标时
-    this.$refs.tool.addEventListener("click", (event) => {
-      console.log("点击了");
-      // 判断是否有打开之前执行的函数
-      typeof this.beforeOpen === "function" && this.beforeOpen();
+    this.$refs.bar.addEventListener("click", () => {
       if (!this._appOpen) {
         this.open(true, () => {
+          // 给聊天窗口发送消息 toolOpen
           this.$refs.iframe.contentWindow.postMessage(
             { type: "toolOpen", visible: this._toolOpen },
             "*"
           );
         });
-        console.log(this._appOpen);
       } else {
         this.close();
-        console.log(this._appOpen);
       }
     });
   }
-  // link 是否打开弹窗链接会话
-  open(link = true, callback = () => {}) {
-    if (typeof this.beforeOpen === "function") {
-      // 获取 beforeOpen 函数的形参个数，如果个数等于1，则表示接收 resolve 回调函数，接收1个boolean类型的参数，表示是否继续执行打开
-      if (this.beforeOpen.length === 1) {
-        this.beforeOpen((canContinue) => {
-          if (!canContinue) return;
-          this._open(link, callback);
-        });
-        return;
-      } else {
-        this.beforeOpen();
-      }
-    }
-    this._open(link, callback);
-  }
-  _open(link = true, callback = () => {}) {
+  open(link = true, callback = () => { }) {
     if (this._appOpen) return;
-
     this._appOpen = true;
+    this.$refs.bar.className += " chat-bar--hidden"
     this.$refs.content.className += " chat-content--show";
-
     if (!this.$refs.iframe) {
       this.$refs.iframe = document.createElement("iframe");
       this.$refs.iframe.className = "chat-content__iframe";
@@ -126,21 +93,13 @@ export default class Chat {
         this.socketOption(callback, link);
       });
       this.$refs.iframe.src = this.src;
-      this.$refs.content.insertBefore(
-        this.$refs.iframe,
-        this.$refs.frameHeader
-      );
+      this.$refs.content.appendChild(this.$refs.iframe)
     } else {
       // 通知京灵建立socket连接
       this.socketOption(callback, link);
     }
   }
-  // 需要socket连接的操作，link 是否需要连接
-  socketOption(callback, link = true) {
-    console.log("开始连接");
-  }
   close(offline = true) {
-    // 如果对话框没有被打开，则不进行任何操作
     if (!this._appOpen) {
       return;
     }
@@ -157,8 +116,22 @@ export default class Chat {
         "*"
       );
   }
-  hide() {
-    this.$refs = null;
-    this.$el.innerHTML = "";
+  // 需要socket连接的操作，link 是否需要连接
+  socketOption(callback, link = true) {
+    if (link && this._socketLink === 0) {
+      windowBridge.once('linkStatusChange', data => {
+        if (data.status === 1) {
+          // 延迟500，避免其他自动加载的消息返回比问题的返回早
+          setTimeout(() => {
+            callback()
+          }, 500)
+        }
+      })
+      this.$refs.iframe.contentWindow.postMessage({ type: 'linkSocket' }, '*')
+    } else {
+      callback()
+    }
   }
 }
+
+new Chat()
